@@ -261,7 +261,7 @@ class RLConfig:
             )
 
     def finalize_ddp_config(self, ddp_config: "DistributedDataParallelConfig") -> None:
-        """Apply the RL layout during container finalization, before DDP allocates buffers.
+        """Apply the RL layout from `finalize_rl_run`, before DDP allocates buffers.
 
         Unlike validation, this updates the run's owned config so checkpoint metadata
         and model construction see the same effective layout. Do not change the RL
