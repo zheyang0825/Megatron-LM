@@ -116,26 +116,26 @@ def rollout_inference_container_from_args(
 
 def validate_rl_run(record: RunConfigRecord, *, global_batch_size: int | None = None) -> None:
     """Validate an RL run's record."""
-    pretrain, inference, rl = record.pretrain, record.inference, record.posttrain.rl
+    training, inference, rl = record.training, record.inference, record.algorithm.rl
     if global_batch_size is None:
-        global_batch_size = pretrain.train.global_batch_size
+        global_batch_size = training.train.global_batch_size
     record.validate()
-    rl.validate_ddp_config(pretrain.ddp)
-    transformer = getattr(pretrain.model, "transformer", None)
+    rl.validate_ddp_config(training.ddp)
+    transformer = getattr(training.model, "transformer", None)
     cuda_graph_impl = None if transformer is None else transformer.cuda_graph_impl
     rl.validate_run(
         cuda_graph_impl=cuda_graph_impl,
-        micro_batch_size=pretrain.train.micro_batch_size,
+        micro_batch_size=training.train.micro_batch_size,
         global_batch_size=global_batch_size,
-        train_iters=pretrain.train.train_iters,
-        train_samples=pretrain.train.train_samples,
-        skip_train=pretrain.validation.skip_train,
-        load_optim=pretrain.checkpoint.load_optim,
-        save_interval=pretrain.checkpoint.save_interval,
-        exit_interval=pretrain.train.exit_interval,
+        train_iters=training.train.train_iters,
+        train_samples=training.train.train_samples,
+        skip_train=training.validation.skip_train,
+        load_optim=training.checkpoint.load_optim,
+        save_interval=training.checkpoint.save_interval,
+        exit_interval=training.train.exit_interval,
     )
     if rl.rl_offload_inference_model_weights and not rollout_model_is_separate(
-        inference, pretrain.model
+        inference, training.model
     ):
         raise ValueError(
             "--rl-offload-inference-model-weights requires a separate inference model. "
@@ -146,17 +146,17 @@ def validate_rl_run(record: RunConfigRecord, *, global_batch_size: int | None = 
 
 def finalize_rl_run(record: RunConfigRecord) -> None:
     """Validate the record, then finalize the deployment."""
-    global_batch_size = record.pretrain.train.global_batch_size
+    global_batch_size = record.training.train.global_batch_size
     if global_batch_size is None:
-        # The pretrain container derives an unset global batch size when it finalizes,
+        # The training container derives an unset global batch size when it finalizes,
         # after this call; check the RL rules against the size it will derive.
-        global_batch_size, _, _ = record.pretrain._resolve_batch_sizes(
-            record.pretrain.get_batch_parallel_size()
+        global_batch_size, _, _ = record.training._resolve_batch_sizes(
+            record.training.get_batch_parallel_size()
         )
     validate_rl_run(record, global_batch_size=global_batch_size)
     record.inference.finalize()
-    if record.posttrain.rl.perform_rl_step:
-        record.posttrain.rl.finalize_ddp_config(record.pretrain.ddp)
+    if record.algorithm.rl.perform_rl_step:
+        record.algorithm.rl.finalize_ddp_config(record.training.ddp)
 
 
 def add_rl_args(parser: ArgumentParser) -> ArgumentParser:
@@ -198,9 +198,9 @@ def add_rollout_inference_args(parser: ArgumentParser) -> ArgumentParser:
 def set_rl_run_config(record: RunConfigRecord) -> None:
     """Register an RL run's record."""
     assert (
-        record.inference is not None and record.posttrain is not None
-    ), "an RL run's record carries its inference and posttrain members"
-    assert record.posttrain.rl is not None, "an RL run's posttrain container carries its rl section"
+        record.inference is not None and record.algorithm is not None
+    ), "an RL run's record carries its inference and algorithm members"
+    assert record.algorithm.rl is not None, "an RL run's algorithm container carries its rl section"
     set_run_config_record(record)
 
 
@@ -208,14 +208,14 @@ def get_rl_run_config() -> RunConfigRecord:
     """Return the registered RL run's record."""
     record = get_run_config_record()
     assert (
-        record is not None and record.posttrain is not None and record.posttrain.rl is not None
+        record is not None and record.algorithm is not None and record.algorithm.rl is not None
     ), "RL run config is not initialized."
     return record
 
 
 def get_rl_config() -> RLConfig:
     """Return the registered RL run's RL section."""
-    return get_rl_run_config().posttrain.rl
+    return get_rl_run_config().algorithm.rl
 
 
 def unset_rl_run_config() -> None:
